@@ -1,0 +1,4 @@
+/php2shell
+*.test
+coverage.out
+.DS_Store

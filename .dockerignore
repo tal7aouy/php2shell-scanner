@@ -1,0 +1,5 @@
+.git
+.DS_Store
+php2shell
+*.test
+coverage.out

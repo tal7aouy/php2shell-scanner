@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go ${{ matrix.go }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: [stable]
+        include:
+          - os: ubuntu-latest
+            go: '1.22.x'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l cmd internal)
+          if [ -n "$unformatted" ]; then
+            echo "Run gofmt on these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Static analysis
+        run: go vet ./...
+
+      - name: Tests with race detection and coverage
+        run: go test -race -coverprofile=coverage.out -timeout=3m ./...
+
+      - name: Show coverage summary
+        run: go tool cover -func=coverage.out
+
+      - name: Build command
+        run: go build ./cmd/...
+
+      - name: Verify local installation and CLI help
+        run: |
+          go install ./cmd/php2shell
+          "$(go env GOPATH)/bin/php2shell" -h
+
+  docker:
+    name: Docker build and CLI smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build -t php2shell-scanner:ci .
+
+      - name: Verify entrypoint
+        run: |
+          docker run --rm php2shell-scanner:ci -h
